@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <title>QR Code Scanner</title>
+  <title>QR Code Scanner - Mở tab nhạc duy nhất</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     #reader {
@@ -13,7 +13,7 @@
   </style>
 </head>
 <body>
-  <h2>Scan QR Code</h2>
+  <h2>Quét QR Code để mở nhạc (mở 1 tab duy nhất)</h2>
   <div id="reader"></div>
 
   <script>
@@ -28,6 +28,7 @@
           { fps: 10, qrbox: 250 },
           (decodedText, decodedResult) => {
             console.log("QR Code scanned:", decodedText);
+			alert(decodedText);
 
             if (!musicWindow || musicWindow.closed) {
               musicWindow = window.open(decodedText, "musicPlayerTab");
@@ -37,18 +38,18 @@
             }
           },
           (errorMessage) => {
-            // 
+            // Lỗi quét có thể bỏ qua
           }
         ).catch(err => {
-          console.error("err:", err);
-          alert("err QR Code: " + err);
+          console.error("Lỗi khi bắt đầu quét:", err);
+          alert("Không thể bắt đầu quét QR Code: " + err);
         });
 
       } else {
-        alert("not found camera");
+        alert("Không tìm thấy camera");
       }
     }).catch(err => {
-      alert("err camera: " + err);
+      alert("Lỗi lấy camera: " + err);
     });
   </script>
 </body>
