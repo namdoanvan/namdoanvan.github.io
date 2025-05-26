@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>QR Code Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    #reader {
+      width: 320px;
+      height: 320px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h2>Scan QR Code</h2>
+  <div id="reader"></div>
+
+  <script>
+    let musicWindow = null;
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices.length) {
+        const html5QrCode = new Html5Qrcode("reader");
+
+        html5QrCode.start(
+          devices[0].id,
+          { fps: 10, qrbox: 250 },
+          (decodedText, decodedResult) => {
+            console.log("QR Code scanned:", decodedText);
+
+            if (!musicWindow || musicWindow.closed) {
+              musicWindow = window.open(decodedText, "musicPlayerTab");
+            } else {
+              musicWindow.location.href = decodedText;
+              musicWindow.focus();
+            }
+          },
+          (errorMessage) => {
+            // 
+          }
+        ).catch(err => {
+          console.error("err:", err);
+          alert("err QR Code: " + err);
+        });
+
+      } else {
+        alert("not found camera");
+      }
+    }).catch(err => {
+      alert("err camera: " + err);
+    });
+  </script>
+</body>
+</html>
