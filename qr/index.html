@@ -28,7 +28,6 @@
           { fps: 10, qrbox: 250 },
           (decodedText, decodedResult) => {
             console.log("QR Code scanned:", decodedText);
-			alert(decodedText);
 
             if (!musicWindow || musicWindow.closed) {
               musicWindow = window.open(decodedText, "musicPlayerTab");
