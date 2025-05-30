@@ -24,6 +24,7 @@
       max-height: 60vh;
       border: 1px solid #ccc;
       overflow: hidden;
+      position: relative; /* Để chứa nút đổi camera */
     }
     #preview {
       width: 100%;
@@ -38,7 +39,7 @@
       margin: 10px 0;
       text-align: center;
     }
-    button {
+    .main-button {
       padding: 10px 20px;
       margin: 5px;
       font-size: 16px;
@@ -48,8 +49,24 @@
       border: none;
       border-radius: 5px;
     }
-    button:hover {
+    .main-button:hover {
       background-color: #45a049;
+    }
+    #switchCameraBtn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 5px 10px;
+      font-size: 12px;
+      background-color: #888;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      z-index: 10; /* Đảm bảo nút nằm trên video */
+    }
+    #switchCameraBtn:hover {
+      background-color: #777;
     }
     #words {
       margin-top: 10px;
@@ -84,12 +101,13 @@
   </style>
 </head>
 <body>
-  <div id="reader"></div>
+  <div id="reader">
+    <button id="switchCameraBtn" style="display: none;">Đổi Camera</button>
+  </div>
   <canvas id="canvas"></canvas>
   <div id="buttons">
-    <button id="captureBtn">Chụp</button>
-    <button id="retakeBtn" style="display: none;">Chụp Lại</button>
-    <button id="switchCameraBtn" style="display: none;">Đổi Camera</button>
+    <button id="captureBtn" class="main-button">Chụp</button>
+    <button id="retakeBtn" class="main-button" style="display: none;">Chụp Lại</button>
   </div>
   <img id="preview" />
   <div id="status"></div>
@@ -134,7 +152,6 @@
       try {
         cameras = await Html5Qrcode.getCameras();
         if (cameras && cameras.length) {
-          // Tìm camera sau
           let backCamera = cameras.find(device => 
             device.label.toLowerCase().includes('back') || 
             device.label.toLowerCase().includes('rear') || 
@@ -160,7 +177,7 @@
     switchCameraBtn.addEventListener('click', async () => {
       try {
         await html5QrCode.stop();
-        currentCameraIndex = (currentCameraIndex + 1) % cameras.length; // Chuyển sang camera tiếp theo
+        currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
         const newCameraId = cameras[currentCameraIndex].id;
         statusDiv.textContent = 'Đang đổi camera... (ID: ' + newCameraId + ', Tên: ' + cameras[currentCameraIndex].label + ')';
         await startCamera(newCameraId);
@@ -199,7 +216,7 @@
       // Ngưỡng hóa để làm rõ chữ
       for (let i = 0; i < data.length; i += 4) {
         const value = data[i];
-        const threshold = 150; // Điều chỉnh ngưỡng nếu cần
+        const threshold = 150;
         const binary = value > threshold ? 255 : 0;
         data[i] = data[i + 1] = data[i + 2] = binary;
       }
