@@ -64,6 +64,11 @@
     #switchCameraBtn:hover {
       background-color: #777;
     }
+    #voiceSelect {
+      margin: 10px 0;
+      padding: 5px;
+      font-size: 14px;
+    }
     #words {
       margin-top: 10px;
       display: flex;
@@ -90,7 +95,6 @@
       color: #333;
       text-align: center;
     }
-    /* Ẩn hình vuông qrbox của html5-qrcode */
     #reader .scan-region-highlight, #reader .qrbox {
       display: none !important;
     }
@@ -104,6 +108,7 @@
     <button id="captureBtn" class="main-button">Chụp</button>
     <button id="retakeBtn" class="main-button" style="display: none;">Chụp Lại</button>
   </div>
+  <select id="voiceSelect" style="display: none;"></select>
   <img id="preview" />
   <div id="status"></div>
   <div id="words"></div>
@@ -118,9 +123,12 @@
     const captureBtn = document.getElementById('captureBtn');
     const retakeBtn = document.getElementById('retakeBtn');
     const switchCameraBtn = document.getElementById('switchCameraBtn');
+    const voiceSelect = document.getElementById('voiceSelect');
     const buttonsDiv = document.getElementById('buttons');
     let cameras = [];
     let currentCameraIndex = 0;
+    let voices = [];
+    let selectedVoice = null;
 
     // Khởi động camera
     async function startCamera(cameraId) {
@@ -192,7 +200,6 @@
       const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      // Chuyển thành thang xám
       for (let i = 0; i < data.length; i += 4) {
         const red = data[i];
         const green = data[i + 1];
@@ -202,14 +209,12 @@
         data[i + 3] = 255;
       }
 
-      // Tăng độ tương phản
       for (let i = 0; i < data.length; i += 4) {
         const value = data[i];
         const contrast = (value - 128) * 2 + 128;
         data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, contrast));
       }
 
-      // Ngưỡng hóa để làm rõ chữ
       for (let i = 0; i < data.length; i += 4) {
         const value = data[i];
         const threshold = 150;
@@ -221,9 +226,44 @@
       return canvas.toDataURL('image/png');
     }
 
-    // Khởi động camera khi tải trang
+    // Tải và hiển thị danh sách giọng
+    function loadVoices() {
+      voices = window.speechSynthesis.getVoices();
+      voiceSelect.innerHTML = '<option value="">Chọn giọng (mặc định: en-US)</option>';
+      voices.forEach((voice, index) => {
+        if (voice.lang.includes('en')) {
+          const option = document.createElement('option');
+          option.value = index;
+          option.textContent = `${voice.name} (${voice.lang})`;
+          voiceSelect.appendChild(option);
+        }
+      });
+      voiceSelect.style.display = voices.length > 0 ? 'block' : 'none';
+
+      // Ưu tiên giọng en-US
+      const enUSVoice = voices.find(voice => voice.lang === 'en-US');
+      if (enUSVoice) {
+        selectedVoice = enUSVoice;
+        statusDiv.textContent += `\nGiọng mặc định: ${enUSVoice.name} (${enUSVoice.lang})`;
+      }
+    }
+
+    // Chọn giọng thủ công
+    voiceSelect.addEventListener('change', () => {
+      const index = voiceSelect.value;
+      if (index !== '') {
+        selectedVoice = voices[index];
+        statusDiv.textContent = `Đã chọn giọng: ${selectedVoice.name} (${selectedVoice.lang})`;
+      } else {
+        selectedVoice = voices.find(voice => voice.lang === 'en-US') || null;
+        statusDiv.textContent = `Quay lại giọng mặc định: ${selectedVoice ? selectedVoice.name : 'Không có'}`;
+      }
+    });
+
+    // Khởi động camera và giọng khi tải trang
     window.addEventListener('load', () => {
-      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
       initCamera();
     });
 
@@ -239,7 +279,6 @@
         retakeBtn.style.display = 'inline-block';
         html5QrCode.pause();
         processImage(imageData);
-        // Cuộn đến vùng nút "Chụp Lại"
         buttonsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
         statusDiv.textContent = 'Lỗi: Không thể truy cập video từ camera';
@@ -303,15 +342,19 @@
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      const voices = window.speechSynthesis.getVoices();
-      const enVoice = voices.find(voice => voice.lang === 'en-US' || voice.lang === 'en');
-      if (enVoice) {
-        utterance.voice = enVoice;
-        statusDiv.textContent = 'Đang phát âm: ' + text + ' (giọng: ' + enVoice.name + ')';
+      utterance.rate = 0.9; // Chậm hơn một chút để trẻ dễ nghe
+      utterance.pitch = 1; // Cao độ tự nhiên
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        statusDiv.textContent = `Đang phát âm: ${text} (giọng: ${selectedVoice.name})`;
       } else {
-        statusDiv.textContent = 'Đang phát âm: ' + text + ' (không tìm thấy giọng en-US)';
+        const fallbackVoice = voices.find(voice => voice.lang === 'en-US') || voices.find(voice => voice.lang.includes('en'));
+        if (fallbackVoice) {
+          utterance.voice = fallbackVoice;
+          statusDiv.textContent = `Đang phát âm: ${text} (giọng: ${fallbackVoice.name})`;
+        } else {
+          statusDiv.textContent = `Đang phát âm: ${text} (không tìm thấy giọng en-US)`;
+        }
       }
       window.speechSynthesis.speak(utterance);
     }
