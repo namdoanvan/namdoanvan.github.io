@@ -89,6 +89,7 @@
   <div id="buttons">
     <button id="captureBtn">Chụp</button>
     <button id="retakeBtn" style="display: none;">Chụp Lại</button>
+    <button id="switchCameraBtn" style="display: none;">Đổi Camera</button>
   </div>
   <img id="preview" />
   <div id="status"></div>
@@ -103,41 +104,72 @@
     const statusDiv = document.getElementById('status');
     const captureBtn = document.getElementById('captureBtn');
     const retakeBtn = document.getElementById('retakeBtn');
+    const switchCameraBtn = document.getElementById('switchCameraBtn');
+    let cameras = [];
+    let currentCameraIndex = 0;
 
     // Khởi động camera
-    async function startCamera() {
+    async function startCamera(cameraId) {
       try {
-        const devices = await Html5Qrcode.getCameras();
-        if (devices && devices.length) {
-          let backCamera = devices.find(device => 
-            device.label.toLowerCase().includes('back') || 
-            device.label.toLowerCase().includes('rear') || 
-            device.label.toLowerCase().includes('environment')
-          );
-          const cameraId = backCamera ? backCamera.id : devices[0].id;
-          
-          statusDiv.textContent = 'Đang khởi động camera... (ID: ' + cameraId + ', Tên: ' + (backCamera ? backCamera.label : devices[0].label) + ')';
-          
-          await html5QrCode.start(
-            cameraId,
-            { 
-              fps: 10,
-              aspectRatio: window.innerWidth / (window.innerHeight * 0.6)
-            },
-            () => {},
-            (errorMessage) => {}
-          );
-          statusDiv.textContent = 'Camera đã sẵn sàng (ID: ' + cameraId + ')';
-        } else {
-          statusDiv.textContent = 'Không tìm thấy camera';
-          alert('Không tìm thấy camera');
-        }
+        await html5QrCode.start(
+          cameraId,
+          { 
+            fps: 10,
+            aspectRatio: window.innerWidth / (window.innerHeight * 0.6)
+          },
+          () => {},
+          (errorMessage) => {}
+        );
+        statusDiv.textContent = 'Camera đã sẵn sàng (ID: ' + cameraId + ', Tên: ' + (cameras.find(cam => cam.id === cameraId)?.label || 'Không xác định') + ')';
+        switchCameraBtn.style.display = cameras.length > 1 ? 'inline-block' : 'none';
       } catch (err) {
         console.error("Lỗi khi bắt đầu camera:", err);
         alert("Không thể khởi động camera: " + err);
         statusDiv.textContent = 'Lỗi khởi động camera: ' + err.message;
       }
     }
+
+    // Lấy danh sách camera và chọn camera sau
+    async function initCamera() {
+      try {
+        cameras = await Html5Qrcode.getCameras();
+        if (cameras && cameras.length) {
+          // Tìm camera sau
+          let backCamera = cameras.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear') || 
+            device.label.toLowerCase().includes('environment')
+          );
+          currentCameraIndex = backCamera ? cameras.indexOf(backCamera) : 0;
+          const cameraId = cameras[currentCameraIndex].id;
+          
+          statusDiv.textContent = 'Đang khởi động camera... (ID: ' + cameraId + ', Tên: ' + cameras[currentCameraIndex].label + ')';
+          await startCamera(cameraId);
+        } else {
+          statusDiv.textContent = 'Không tìm thấy camera';
+          alert('Không tìm thấy camera');
+        }
+      } catch (err) {
+        console.error("Lỗi khi lấy danh sách camera:", err);
+        alert("Lỗi khi lấy danh sách camera: " + err);
+        statusDiv.textContent = 'Lỗi lấy danh sách camera: ' + err.message;
+      }
+    }
+
+    // Đổi camera
+    switchCameraBtn.addEventListener('click', async () => {
+      try {
+        await html5QrCode.stop();
+        currentCameraIndex = (currentCameraIndex + 1) % cameras.length; // Chuyển sang camera tiếp theo
+        const newCameraId = cameras[currentCameraIndex].id;
+        statusDiv.textContent = 'Đang đổi camera... (ID: ' + newCameraId + ', Tên: ' + cameras[currentCameraIndex].label + ')';
+        await startCamera(newCameraId);
+      } catch (err) {
+        console.error("Lỗi khi đổi camera:", err);
+        alert("Lỗi khi đổi camera: " + err);
+        statusDiv.textContent = 'Lỗi khi đổi camera: ' + err.message;
+      }
+    });
 
     // Tiền xử lý ảnh để cải thiện OCR
     function preprocessImage(videoElement) {
@@ -177,7 +209,10 @@
     }
 
     // Khởi động camera khi tải trang
-    startCamera();
+    window.addEventListener('load', () => {
+      window.speechSynthesis.getVoices();
+      initCamera();
+    });
 
     // Chụp ảnh
     captureBtn.addEventListener('click', () => {
@@ -265,12 +300,6 @@
       }
       window.speechSynthesis.speak(utterance);
     }
-
-    // Tải danh sách giọng khi trang sẵn sàng
-    window.addEventListener('load', () => {
-      window.speechSynthesis.getVoices();
-      startCamera();
-    });
   </script>
 </body>
 </html>
