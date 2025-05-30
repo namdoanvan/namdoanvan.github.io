@@ -140,6 +140,7 @@
         );
         statusDiv.textContent = 'Camera đã sẵn sàng (ID: ' + cameraId + ', Tên: ' + (cameras.find(cam => cam.id === cameraId)?.label || 'Không xác định') + ')';
         switchCameraBtn.style.display = cameras.length > 1 ? 'inline-block' : 'none';
+		alert(switchCameraBtn.style.display);
       } catch (err) {
         console.error("Lỗi khi bắt đầu camera:", err);
         alert("Không thể khởi động camera: " + err);
