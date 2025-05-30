@@ -29,6 +29,7 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+      display: block; /* Đảm bảo video hiển thị */
     }
     #preview {
       width: 100%;
@@ -37,7 +38,7 @@
       max-height: 30vh;
       display: none;
       margin-top: 10px;
-      object-fit: contain; /* Giữ tỷ lệ ảnh, không bóp méo */
+      object-fit: contain;
     }
     #buttons {
       margin: 10px 0;
@@ -74,18 +75,19 @@
       background-color: #ddd;
     }
     #canvas {
-      display: none; /* Ẩn canvas, chỉ dùng để chụp ảnh */
+      display: none;
     }
     #status {
       margin: 10px 0;
       font-size: 14px;
       color: #333;
+      text-align: center;
     }
   </style>
 </head>
 <body>
   <div id="reader">
-    <video id="video"></video>
+    <video id="video" playsinline></video>
   </div>
   <canvas id="canvas"></canvas>
   <div id="buttons">
@@ -112,19 +114,24 @@
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { 
-            facingMode: 'environment', // Dùng camera sau
+            facingMode: 'environment',
             width: { ideal: window.innerWidth },
             height: { ideal: window.innerHeight * 0.6 }
           }
         });
         video.srcObject = stream;
+        video.setAttribute('playsinline', 'true'); // Đảm bảo video chạy trên iOS
         video.play();
         document.getElementById('reader').style.display = 'block';
         statusDiv.textContent = 'Camera đã sẵn sàng';
+        // Kiểm tra xem video có hiển thị không
+        video.addEventListener('loadedmetadata', () => {
+          statusDiv.textContent = 'Camera đang hiển thị (kích thước: ' + video.videoWidth + 'x' + video.videoHeight + ')';
+        });
       } catch (err) {
         console.error("Lỗi khi bắt đầu camera:", err);
         alert("Không thể khởi động camera: " + err);
-        statusDiv.textContent = 'Lỗi khởi động camera';
+        statusDiv.textContent = 'Lỗi khởi động camera: ' + err.message;
       }
     }
 
@@ -138,26 +145,44 @@
       }
     }
 
+    // Tiền xử lý ảnh để cải thiện OCR
+    function preprocessImage(canvas, context) {
+      const width = canvas.width;
+      const height = canvas.height;
+      context.drawImage(video, 0, 0, width, height);
+      const imageData = context.getImageData(0, 0, width, height);
+      const data = imageData.data;
+
+      // Chuyển thành thang xám và tăng độ tương phản
+      for (let i = 0; i < data.length; i += 4) {
+        const red = data[i];
+        const green = data[i + 1];
+        const blue = data[i + 2];
+        const gray = 0.2989 * red + 0.5870 * green + 0.1140 * blue;
+        const contrast = (gray - 128) * 1.5 + 128;
+        const value = Math.max(0, Math.min(255, contrast));
+        data[i] = data[i + 1] = data[i + 2] = value;
+        data[i + 3] = 255;
+      }
+      context.putImageData(imageData, 0, 0);
+      return canvas.toDataURL('image/png');
+    }
+
     // Khởi động camera khi tải trang
     startCamera();
 
     // Chụp ảnh
     captureBtn.addEventListener('click', () => {
-      // Đặt kích thước canvas khớp với video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      // Vẽ khung hình từ video lên canvas
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      // Lấy dữ liệu ảnh từ canvas
-      const imageData = canvas.toDataURL('image/png');
-      // Hiển thị ảnh chụp
+      statusDiv.textContent = 'Đang xử lý ảnh...';
+      const imageData = preprocessImage(canvas, context);
       preview.src = imageData;
       preview.style.display = 'block';
       captureBtn.style.display = 'none';
       retakeBtn.style.display = 'inline-block';
-      stopCamera(); // Dừng camera
-      statusDiv.textContent = 'Đang xử lý ảnh...';
-      processImage(imageData); // Xử lý OCR
+      stopCamera();
+      processImage(imageData);
     });
 
     // Chụp lại
@@ -167,7 +192,7 @@
       captureBtn.style.display = 'inline-block';
       retakeBtn.style.display = 'none';
       statusDiv.textContent = '';
-      startCamera(); // Khởi động lại camera
+      startCamera();
     });
 
     // Xử lý ảnh và trích xuất từ
@@ -178,12 +203,17 @@
         const worker = await createWorker();
         await worker.loadLanguage('eng');
         await worker.initialize('eng');
-        const { data: { words } } = await worker.recognize(imageData);
+        await worker.setParameters({
+          tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
+          preserve_interword_spaces: '1',
+          tessedit_pageseg_mode: '6'
+        });
+        const { data: { words, confidence } } = await worker.recognize(imageData);
         await worker.terminate();
 
         wordsDiv.innerHTML = '';
-        if (words.length === 0) {
-          statusDiv.textContent = 'Không tìm thấy văn bản trong ảnh';
+        if (words.length === 0 || confidence < 50) {
+          statusDiv.textContent = 'Không tìm thấy văn bản hoặc độ tin cậy thấp (confidence: ' + confidence + ')';
         } else {
           words.forEach(word => {
             if (word.text.trim()) {
@@ -196,7 +226,7 @@
               wordsDiv.appendChild(span);
             }
           });
-          statusDiv.textContent = 'Đã nhận diện xong! Nhấn vào từ để nghe phát âm';
+          statusDiv.textContent = 'Đã nhận diện xong! Độ tin cậy: ' + confidence + ' - Nhấn vào từ để nghe phát âm';
         }
       } catch (err) {
         console.error("Lỗi khi nhận diện văn bản:", err);
@@ -207,13 +237,30 @@
 
     // Phát âm từ
     function speak(text) {
+      // Hủy các phát âm đang chạy
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
+      utterance.lang = 'en-US'; // Đặt ngôn ngữ tiếng Anh
       utterance.rate = 0.9;
       utterance.pitch = 1;
+      // Kiểm tra và chọn giọng tiếng Anh
+      const voices = window.speechSynthesis.getVoices();
+      const enVoice = voices.find(voice => voice.lang === 'en-US' || voice.lang === 'en');
+      if (enVoice) {
+        utterance.voice = enVoice;
+        statusDiv.textContent = 'Đang phát âm: ' + text + ' (giọng: ' + enVoice.name + ')';
+      } else {
+        statusDiv.textContent = 'Đang phát âm: ' + text + ' (không tìm thấy giọng en-US)';
+      }
       window.speechSynthesis.speak(utterance);
-      statusDiv.textContent = 'Đang phát âm: ' + text;
     }
+
+    // Tải danh sách giọng khi trang sẵn sàng
+    window.addEventListener('load', () => {
+      // Đợi giọng tải xong
+      window.speechSynthesis.getVoices();
+      startCamera();
+    });
   </script>
 </body>
 </html>
