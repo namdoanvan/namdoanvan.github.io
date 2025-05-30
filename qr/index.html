@@ -25,12 +25,6 @@
       border: 1px solid #ccc;
       overflow: hidden;
     }
-    #video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block; /* Đảm bảo video hiển thị */
-    }
     #preview {
       width: 100%;
       max-width: 100%;
@@ -86,9 +80,7 @@
   </style>
 </head>
 <body>
-  <div id="reader">
-    <video id="video" playsinline></video>
-  </div>
+  <div id="reader"></div>
   <canvas id="canvas"></canvas>
   <div id="buttons">
     <button id="captureBtn">Chụp</button>
@@ -99,7 +91,7 @@
   <div id="words"></div>
 
   <script>
-    const video = document.getElementById('video');
+    const html5QrCode = new Html5Qrcode("reader");
     const canvas = document.getElementById('canvas');
     const context = canvas.getContext('2d');
     const preview = document.getElementById('preview');
@@ -107,27 +99,27 @@
     const statusDiv = document.getElementById('status');
     const captureBtn = document.getElementById('captureBtn');
     const retakeBtn = document.getElementById('retakeBtn');
-    let stream = null;
 
     // Khởi động camera
     async function startCamera() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            facingMode: 'environment',
-            width: { ideal: window.innerWidth },
-            height: { ideal: window.innerHeight * 0.6 }
-          }
-        });
-        video.srcObject = stream;
-        video.setAttribute('playsinline', 'true'); // Đảm bảo video chạy trên iOS
-        video.play();
-        document.getElementById('reader').style.display = 'block';
-        statusDiv.textContent = 'Camera đã sẵn sàng';
-        // Kiểm tra xem video có hiển thị không
-        video.addEventListener('loadedmetadata', () => {
-          statusDiv.textContent = 'Camera đang hiển thị (kích thước: ' + video.videoWidth + 'x' + video.videoHeight + ')';
-        });
+        const devices = await Html5Qrcode.getCameras();
+        if (devices.length) {
+          await html5QrCode.start(
+            devices[0].id, // Dùng camera mặc định (thường là camera sau)
+            { 
+              fps: 10, 
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: window.innerWidth / (window.innerHeight * 0.6)
+            },
+            () => {}, // Không cần quét QR
+            (errorMessage) => {} // Bỏ qua lỗi quét
+          );
+          statusDiv.textContent = 'Camera đã sẵn sàng';
+        } else {
+          statusDiv.textContent = 'Không tìm thấy camera';
+          alert('Không tìm thấy camera');
+        }
       } catch (err) {
         console.error("Lỗi khi bắt đầu camera:", err);
         alert("Không thể khởi động camera: " + err);
@@ -135,35 +127,39 @@
       }
     }
 
-    // Dừng camera
-    function stopCamera() {
-      if (stream) {
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-        video.srcObject = null;
-        document.getElementById('reader').style.display = 'none';
-      }
-    }
-
     // Tiền xử lý ảnh để cải thiện OCR
-    function preprocessImage(canvas, context) {
-      const width = canvas.width;
-      const height = canvas.height;
-      context.drawImage(video, 0, 0, width, height);
-      const imageData = context.getImageData(0, 0, width, height);
+    function preprocessImage(videoElement) {
+      canvas.width = videoElement.videoWidth;
+      canvas.height = videoElement.videoHeight;
+      context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      // Chuyển thành thang xám và tăng độ tương phản
+      // Chuyển thành thang xám
       for (let i = 0; i < data.length; i += 4) {
         const red = data[i];
         const green = data[i + 1];
         const blue = data[i + 2];
         const gray = 0.2989 * red + 0.5870 * green + 0.1140 * blue;
-        const contrast = (gray - 128) * 1.5 + 128;
-        const value = Math.max(0, Math.min(255, contrast));
-        data[i] = data[i + 1] = data[i + 2] = value;
+        data[i] = data[i + 1] = data[i + 2] = gray;
         data[i + 3] = 255;
       }
+
+      // Tăng độ tương phản
+      for (let i = 0; i < data.length; i += 4) {
+        const value = data[i];
+        const contrast = (value - 128) * 2 + 128;
+        data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, contrast));
+      }
+
+      // Ngưỡng hóa để làm rõ chữ
+      for (let i = 0; i < data.length; i += 4) {
+        const value = data[i];
+        const threshold = 150; // Điều chỉnh ngưỡng nếu cần
+        const binary = value > threshold ? 255 : 0;
+        data[i] = data[i + 1] = data[i + 2] = binary;
+      }
+
       context.putImageData(imageData, 0, 0);
       return canvas.toDataURL('image/png');
     }
@@ -173,16 +169,22 @@
 
     // Chụp ảnh
     captureBtn.addEventListener('click', () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
       statusDiv.textContent = 'Đang xử lý ảnh...';
-      const imageData = preprocessImage(canvas, context);
-      preview.src = imageData;
-      preview.style.display = 'block';
-      captureBtn.style.display = 'none';
-      retakeBtn.style.display = 'inline-block';
-      stopCamera();
-      processImage(imageData);
+      // Lấy video element từ html5-qrcode
+      const videoElement = document.querySelector('#reader video');
+      if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
+        const imageData = preprocessImage(videoElement);
+        preview.src = imageData;
+        preview.style.display = 'block';
+        captureBtn.style.display = 'none';
+        retakeBtn.style.display = 'inline-block';
+        html5QrCode.pause();
+        processImage(imageData);
+      } else {
+        statusDiv.textContent = 'Lỗi: Không thể truy cập video từ camera';
+        alert('Lỗi: Không thể truy cập video từ camera');
+        html5QrCode.resume();
+      }
     });
 
     // Chụp lại
@@ -192,7 +194,7 @@
       captureBtn.style.display = 'inline-block';
       retakeBtn.style.display = 'none';
       statusDiv.textContent = '';
-      startCamera();
+      html5QrCode.resume();
     });
 
     // Xử lý ảnh và trích xuất từ
@@ -206,14 +208,14 @@
         await worker.setParameters({
           tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
           preserve_interword_spaces: '1',
-          tessedit_pageseg_mode: '6'
+          tessedit_pageseg_mode: '3' // Tự động phân đoạn, linh hoạt
         });
-        const { data: { words, confidence } } = await worker.recognize(imageData);
+        const { data: { words, confidence, text } } = await worker.recognize(imageData);
         await worker.terminate();
 
         wordsDiv.innerHTML = '';
         if (words.length === 0 || confidence < 50) {
-          statusDiv.textContent = 'Không tìm thấy văn bản hoặc độ tin cậy thấp (confidence: ' + confidence + ')';
+          statusDiv.textContent = 'Không tìm thấy văn bản hoặc độ tin cậy thấp (confidence: ' + confidence + ')\nVăn bản thô: ' + (text || 'Không có');
         } else {
           words.forEach(word => {
             if (word.text.trim()) {
@@ -226,7 +228,7 @@
               wordsDiv.appendChild(span);
             }
           });
-          statusDiv.textContent = 'Đã nhận diện xong! Độ tin cậy: ' + confidence + ' - Nhấn vào từ để nghe phát âm';
+          statusDiv.textContent = 'Đã nhận diện xong! Độ tin cậy: ' + confidence + ' - Nhấn vào từ để nghe phát âm\nVăn bản thô: ' + text;
         }
       } catch (err) {
         console.error("Lỗi khi nhận diện văn bản:", err);
@@ -237,13 +239,11 @@
 
     // Phát âm từ
     function speak(text) {
-      // Hủy các phát âm đang chạy
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US'; // Đặt ngôn ngữ tiếng Anh
+      utterance.lang = 'en-US';
       utterance.rate = 0.9;
       utterance.pitch = 1;
-      // Kiểm tra và chọn giọng tiếng Anh
       const voices = window.speechSynthesis.getVoices();
       const enVoice = voices.find(voice => voice.lang === 'en-US' || voice.lang === 'en');
       if (enVoice) {
@@ -257,7 +257,6 @@
 
     // Tải danh sách giọng khi trang sẵn sàng
     window.addEventListener('load', () => {
-      // Đợi giọng tải xong
       window.speechSynthesis.getVoices();
       startCamera();
     });
