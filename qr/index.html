@@ -197,9 +197,19 @@
       canvas.width = videoElement.videoWidth;
       canvas.height = videoElement.videoHeight;
       context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
+      let imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      let data = imageData.data;
 
+      // Giảm ảnh hưởng tông xanh lá
+      for (let i = 0; i < data.length; i += 4) {
+        const red = data[i];
+        const green = data[i + 1];
+        const blue = data[i + 2];
+        // Giảm thành phần xanh để làm nổi chữ đen
+        data[i + 1] = Math.min(green * 0.7, 255);
+      }
+
+      // Chuyển sang thang xám
       for (let i = 0; i < data.length; i += 4) {
         const red = data[i];
         const green = data[i + 1];
@@ -209,17 +219,47 @@
         data[i + 3] = 255;
       }
 
+      // Cân bằng histogram để tăng tương phản
+      const histogram = new Array(256).fill(0);
+      for (let i = 0; i < data.length; i += 4) {
+        histogram[data[i]]++;
+      }
+      const totalPixels = canvas.width * canvas.height;
+      let cumsum = 0;
+      const cdf = histogram.map(count => {
+        cumsum += count / totalPixels;
+        return cumsum;
+      });
       for (let i = 0; i < data.length; i += 4) {
         const value = data[i];
-        const contrast = (value - 128) * 2 + 128;
-        data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, contrast));
+        const equalized = Math.floor(cdf[value] * 255);
+        data[i] = data[i + 1] = data[i + 2] = equalized;
       }
 
-      for (let i = 0; i < data.length; i += 4) {
-        const value = data[i];
-        const threshold = 150;
-        const binary = value > threshold ? 255 : 0;
-        data[i] = data[i + 1] = data[i + 2] = binary;
+      // Ngưỡng động (adaptive thresholding đơn giản)
+      const blockSize = 15; // Kích thước vùng cục bộ
+      const offset = 10; // Độ lệch ngưỡng
+      const tempData = new Uint8ClampedArray(data);
+      const halfBlock = Math.floor(blockSize / 2);
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          let sum = 0;
+          let count = 0;
+          for (let dy = -halfBlock; dy <= halfBlock; dy++) {
+            for (let dx = -halfBlock; dx <= halfBlock; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx >= 0 && nx < canvas.width && ny >= 0 && ny < canvas.height) {
+                sum += tempData[(ny * canvas.width + nx) * 4];
+                count++;
+              }
+            }
+          }
+          const mean = sum / count;
+          const pixelIndex = (y * canvas.width + x) * 4;
+          const pixelValue = tempData[pixelIndex];
+          data[pixelIndex] = data[pixelIndex + 1] = data[pixelIndex + 2] = pixelValue < mean - offset ? 0 : 255;
+        }
       }
 
       context.putImageData(imageData, 0, 0);
@@ -240,7 +280,6 @@
       });
       voiceSelect.style.display = voices.length > 0 ? 'block' : 'none';
 
-      // Ưu tiên giọng en-US
       const enUSVoice = voices.find(voice => voice.lang === 'en-US');
       if (enUSVoice) {
         selectedVoice = enUSVoice;
@@ -342,8 +381,8 @@
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
-      utterance.rate = 0.9; // Chậm hơn một chút để trẻ dễ nghe
-      utterance.pitch = 1; // Cao độ tự nhiên
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
       if (selectedVoice) {
         utterance.voice = selectedVoice;
         statusDiv.textContent = `Đang phát âm: ${text} (giọng: ${selectedVoice.name})`;
