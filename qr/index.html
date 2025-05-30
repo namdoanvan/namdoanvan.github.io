@@ -77,6 +77,10 @@
       color: #333;
       text-align: center;
     }
+    /* Ẩn hình vuông qrbox của html5-qrcode */
+    #reader .scan-region-highlight, #reader .qrbox {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -105,25 +109,23 @@
       try {
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length) {
-          // Tìm camera sau (thường có "back", "rear", hoặc "environment" trong tên)
           let backCamera = devices.find(device => 
             device.label.toLowerCase().includes('back') || 
             device.label.toLowerCase().includes('rear') || 
             device.label.toLowerCase().includes('environment')
           );
-          const cameraId = backCamera ? backCamera.id : devices[0].id; // Dùng camera đầu tiên nếu không tìm thấy camera sau
+          const cameraId = backCamera ? backCamera.id : devices[0].id;
           
           statusDiv.textContent = 'Đang khởi động camera... (ID: ' + cameraId + ', Tên: ' + (backCamera ? backCamera.label : devices[0].label) + ')';
           
           await html5QrCode.start(
             cameraId,
             { 
-              fps: 10, 
-              qrbox: { width: 250, height: 250 },
+              fps: 10,
               aspectRatio: window.innerWidth / (window.innerHeight * 0.6)
             },
-            () => {}, // Không cần quét QR
-            (errorMessage) => {} // Bỏ qua lỗi quét
+            () => {},
+            (errorMessage) => {}
           );
           statusDiv.textContent = 'Camera đã sẵn sàng (ID: ' + cameraId + ')';
         } else {
