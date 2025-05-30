@@ -2,54 +2,218 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <title>QR Code Scanner - Mở tab nhạc duy nhất</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Ứng Dụng Luyện Phát Âm Tiếng Anh</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
   <style>
+    body {
+      margin: 0;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      box-sizing: border-box;
+    }
     #reader {
-      width: 320px;
-      height: 320px;
+      width: 100vw !important;
+      height: 60vh !important;
+      max-width: 100%;
+      max-height: 60vh;
       border: 1px solid #ccc;
+      overflow: hidden;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #preview {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      max-height: 30vh;
+      display: none;
+      margin-top: 10px;
+      object-fit: contain; /* Giữ tỷ lệ ảnh, không bóp méo */
+    }
+    #buttons {
+      margin: 10px 0;
+      text-align: center;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #words {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    .word {
+      padding: 8px 12px;
+      background-color: #f0f0f0;
+      border-radius: 5px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .word:hover {
+      background-color: #ddd;
+    }
+    #canvas {
+      display: none; /* Ẩn canvas, chỉ dùng để chụp ảnh */
+    }
+    #status {
+      margin: 10px 0;
+      font-size: 14px;
+      color: #333;
     }
   </style>
 </head>
 <body>
-  <h2>Quét QR Code để mở nhạc (mở 1 tab duy nhất)</h2>
-  <div id="reader"></div>
+  <div id="reader">
+    <video id="video"></video>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="buttons">
+    <button id="captureBtn">Chụp</button>
+    <button id="retakeBtn" style="display: none;">Chụp Lại</button>
+  </div>
+  <img id="preview" />
+  <div id="status"></div>
+  <div id="words"></div>
 
   <script>
-    let musicWindow = null;
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    const preview = document.getElementById('preview');
+    const wordsDiv = document.getElementById('words');
+    const statusDiv = document.getElementById('status');
+    const captureBtn = document.getElementById('captureBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+    let stream = null;
 
-    Html5Qrcode.getCameras().then(devices => {
-      if (devices.length) {
-        const html5QrCode = new Html5Qrcode("reader");
-
-        html5QrCode.start(
-          devices[0].id,
-          { fps: 10, qrbox: 250 },
-          (decodedText, decodedResult) => {
-            console.log("QR Code scanned:", decodedText);
-
-            if (!musicWindow || musicWindow.closed) {
-              musicWindow = window.open(decodedText, "musicPlayerTab");
-            } else {
-              musicWindow.location.href = decodedText;
-              musicWindow.focus();
-            }
-          },
-          (errorMessage) => {
-            // Lỗi quét có thể bỏ qua
+    // Khởi động camera
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'environment', // Dùng camera sau
+            width: { ideal: window.innerWidth },
+            height: { ideal: window.innerHeight * 0.6 }
           }
-        ).catch(err => {
-          console.error("Lỗi khi bắt đầu quét:", err);
-          alert("Không thể bắt đầu quét QR Code: " + err);
         });
-
-      } else {
-        alert("Không tìm thấy camera");
+        video.srcObject = stream;
+        video.play();
+        document.getElementById('reader').style.display = 'block';
+        statusDiv.textContent = 'Camera đã sẵn sàng';
+      } catch (err) {
+        console.error("Lỗi khi bắt đầu camera:", err);
+        alert("Không thể khởi động camera: " + err);
+        statusDiv.textContent = 'Lỗi khởi động camera';
       }
-    }).catch(err => {
-      alert("Lỗi lấy camera: " + err);
+    }
+
+    // Dừng camera
+    function stopCamera() {
+      if (stream) {
+        const tracks = stream.getTracks();
+        tracks.forEach(track => track.stop());
+        video.srcObject = null;
+        document.getElementById('reader').style.display = 'none';
+      }
+    }
+
+    // Khởi động camera khi tải trang
+    startCamera();
+
+    // Chụp ảnh
+    captureBtn.addEventListener('click', () => {
+      // Đặt kích thước canvas khớp với video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      // Vẽ khung hình từ video lên canvas
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Lấy dữ liệu ảnh từ canvas
+      const imageData = canvas.toDataURL('image/png');
+      // Hiển thị ảnh chụp
+      preview.src = imageData;
+      preview.style.display = 'block';
+      captureBtn.style.display = 'none';
+      retakeBtn.style.display = 'inline-block';
+      stopCamera(); // Dừng camera
+      statusDiv.textContent = 'Đang xử lý ảnh...';
+      processImage(imageData); // Xử lý OCR
     });
+
+    // Chụp lại
+    retakeBtn.addEventListener('click', () => {
+      wordsDiv.innerHTML = '';
+      preview.style.display = 'none';
+      captureBtn.style.display = 'inline-block';
+      retakeBtn.style.display = 'none';
+      statusDiv.textContent = '';
+      startCamera(); // Khởi động lại camera
+    });
+
+    // Xử lý ảnh và trích xuất từ
+    async function processImage(imageData) {
+      try {
+        statusDiv.textContent = 'Đang nhận diện văn bản...';
+        const { createWorker } = Tesseract;
+        const worker = await createWorker();
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+        const { data: { words } } = await worker.recognize(imageData);
+        await worker.terminate();
+
+        wordsDiv.innerHTML = '';
+        if (words.length === 0) {
+          statusDiv.textContent = 'Không tìm thấy văn bản trong ảnh';
+        } else {
+          words.forEach(word => {
+            if (word.text.trim()) {
+              const span = document.createElement('span');
+              span.className = 'word';
+              span.textContent = word.text;
+              span.addEventListener('click', () => {
+                speak(word.text);
+              });
+              wordsDiv.appendChild(span);
+            }
+          });
+          statusDiv.textContent = 'Đã nhận diện xong! Nhấn vào từ để nghe phát âm';
+        }
+      } catch (err) {
+        console.error("Lỗi khi nhận diện văn bản:", err);
+        statusDiv.textContent = 'Lỗi khi nhận diện văn bản: ' + err.message;
+        alert("Lỗi khi nhận diện văn bản: " + err);
+      }
+    }
+
+    // Phát âm từ
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+      statusDiv.textContent = 'Đang phát âm: ' + text;
+    }
   </script>
 </body>
 </html>
