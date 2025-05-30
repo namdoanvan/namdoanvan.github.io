@@ -104,9 +104,19 @@
     async function startCamera() {
       try {
         const devices = await Html5Qrcode.getCameras();
-        if (devices.length) {
+        if (devices && devices.length) {
+          // Tìm camera sau (thường có "back", "rear", hoặc "environment" trong tên)
+          let backCamera = devices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear') || 
+            device.label.toLowerCase().includes('environment')
+          );
+          const cameraId = backCamera ? backCamera.id : devices[0].id; // Dùng camera đầu tiên nếu không tìm thấy camera sau
+          
+          statusDiv.textContent = 'Đang khởi động camera... (ID: ' + cameraId + ', Tên: ' + (backCamera ? backCamera.label : devices[0].label) + ')';
+          
           await html5QrCode.start(
-            devices[0].id, // Dùng camera mặc định (thường là camera sau)
+            cameraId,
             { 
               fps: 10, 
               qrbox: { width: 250, height: 250 },
@@ -115,7 +125,7 @@
             () => {}, // Không cần quét QR
             (errorMessage) => {} // Bỏ qua lỗi quét
           );
-          statusDiv.textContent = 'Camera đã sẵn sàng';
+          statusDiv.textContent = 'Camera đã sẵn sàng (ID: ' + cameraId + ')';
         } else {
           statusDiv.textContent = 'Không tìm thấy camera';
           alert('Không tìm thấy camera');
@@ -170,7 +180,6 @@
     // Chụp ảnh
     captureBtn.addEventListener('click', () => {
       statusDiv.textContent = 'Đang xử lý ảnh...';
-      // Lấy video element từ html5-qrcode
       const videoElement = document.querySelector('#reader video');
       if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
         const imageData = preprocessImage(videoElement);
@@ -208,7 +217,7 @@
         await worker.setParameters({
           tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
           preserve_interword_spaces: '1',
-          tessedit_pageseg_mode: '3' // Tự động phân đoạn, linh hoạt
+          tessedit_pageseg_mode: '3'
         });
         const { data: { words, confidence, text } } = await worker.recognize(imageData);
         await worker.terminate();
